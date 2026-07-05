@@ -41,7 +41,7 @@ stickersbot.add_handler(ConversationHandler(
         Status.CREATE_WAITING_FIRST_STICKER: [
             MessageHandler(Filters.text & ~Filters.command, create.on_first_sticker_text_receive),  # in case the user sends the emojis
             # this handler is shared by all types of stickers
-            MessageHandler(Filters.sticker | CustomFilters.supported_file, create.on_first_sticker_receive),
+            MessageHandler(Filters.sticker | CustomFilters.supported_file | CustomFilters.raw_media, create.on_first_sticker_receive),
             MessageHandler(~CustomFilters.done_or_cancel, create.on_waiting_first_sticker_invalid_message)
         ],
 
@@ -55,10 +55,10 @@ stickersbot.add_handler(ConversationHandler(
             MessageHandler(Filters.text & ~Filters.command(Commands.STANDARD_CANCEL_COMMANDS), add.on_pack_name)
         ],
 
-        # ADD (shared by /add and /create)
+        # ADD (shared by /add et /create)
         Status.WAITING_STICKER: [
             MessageHandler(Filters.text & ~Filters.command, add.on_text_receive),  # in case the user sends the emojis
-            MessageHandler(Filters.sticker | CustomFilters.supported_file, add.on_sticker_receive),
+            MessageHandler(Filters.sticker | CustomFilters.supported_file | CustomFilters.raw_media, add.on_sticker_receive),
             # for everything that is not catched by the handlers above
             MessageHandler(Filters.all & ~Filters.command(Commands.STANDARD_CANCEL_COMMANDS), add.on_waiting_sticker_invalid_message)
         ],
