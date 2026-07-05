@@ -44,7 +44,8 @@ def on_start_command(update: Update, _):
         start_message = '{}\n🛠 <a href="{}">source code</a>'.format(start_message, config.bot.sourcecode)
 
     keyboard = [
-        [InlineKeyboardButton("📢 Channel City", url="https://t.me/lifeCitychannel")]
+        [InlineKeyboardButton("📢 Channel City", url="https://t.me/lifeCitychannel")],
+        [InlineKeyboardButton("👤 Créateur", url="https://t.me/Christus225")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
