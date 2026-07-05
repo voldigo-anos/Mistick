@@ -1,4 +1,5 @@
 import logging
+import os
 import tempfile
 # noinspection PyPackageRequirements
 from typing import Union, Optional
@@ -7,6 +8,7 @@ from telegram import Sticker, Document, InputFile, Bot, Message, File, MessageEn
 
 from constants.stickers import StickerType, MimeType
 from ..utils import image
+from ..utils import converter
 from ..utils.pyrogram import get_sticker_emojis
 
 # noinspection PyPackageRequirements
@@ -25,10 +27,23 @@ class StickerFile:
 
     def __init__(self, message: Union[Message, MessageScaffold], emojis: Optional[list] = None, tempfile_to_use: Optional[tempfile.TemporaryFile] = None):
         self.type = None
+        self.raw_media = False  # True si photo/video/gif brut necessitant une conversion ffmpeg
         self.sticker: Union[Sticker, Document] = message.sticker or message.document
         self.sticker_tempfile = tempfile_to_use or tempfile.SpooledTemporaryFile()  # bytes object to pass to the api
 
-        if self.is_sticker() and not self.sticker.is_animated and not self.sticker.is_video:
+        if self.sticker is None and getattr(message, 'photo', None):
+            self.raw_media = True
+            self.sticker = message.photo[-1]  # plus haute resolution disponible
+            self.type = StickerType.STATIC
+        elif self.sticker is None and getattr(message, 'video', None):
+            self.raw_media = True
+            self.sticker = message.video
+            self.type = StickerType.VIDEO
+        elif self.sticker is None and getattr(message, 'animation', None):
+            self.raw_media = True
+            self.sticker = message.animation
+            self.type = StickerType.VIDEO
+        elif self.is_sticker() and not self.sticker.is_animated and not self.sticker.is_video:
             self.type = StickerType.STATIC
         elif self.is_sticker() and self.sticker.is_animated:
             self.type = StickerType.ANIMATED
@@ -45,6 +60,8 @@ class StickerFile:
             # user-specified emojis has been passed
             # eg. the user sent some emojis before sending the stickers
             self.emojis = emojis
+        elif self.raw_media:
+            self.emojis = [self.DEFAULT_EMOJI]
         elif self.is_sticker() and not self.sticker.emoji:
             logger.info("the stickers doesn't have a pack, using default emoji")
             self.emojis = [self.DEFAULT_EMOJI]
@@ -154,9 +171,28 @@ class StickerFile:
         logger.debug('downloading stickers')
         new_file: File = self.sticker.get_file()
 
-        logger.debug('downloading to bytes object')
-        new_file.download(out=self.sticker_tempfile)
-        self.sticker_tempfile.seek(0)
+        if self.raw_media:
+            logger.debug('downloading raw media (photo/video/gif) to convert it via ffmpeg')
+
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_in:
+                input_path = tmp_in.name
+
+            try:
+                new_file.download(custom_path=input_path)
+
+                if self.type == StickerType.STATIC:
+                    converter.convert_image_to_webp(input_path, self.sticker_tempfile)
+                else:
+                    converter.convert_video_to_webm(input_path, self.sticker_tempfile)
+            finally:
+                if os.path.exists(input_path):
+                    os.remove(input_path)
+
+            self.sticker_tempfile.seek(0)
+        else:
+            logger.debug('downloading to bytes object')
+            new_file.download(out=self.sticker_tempfile)
+            self.sticker_tempfile.seek(0)
 
     def close(self):
         # noinspection PyBroadException
