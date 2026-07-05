@@ -103,14 +103,6 @@ def failwithmessage(func):
     return wrapped
 
 
-def is_admin(user_id):
-    if user_id in config.telegram.admins:
-        return True
-
-    from bot.database.models.admin import Admin
-    return user_id in Admin.all_ids()
-
-
 def restricted(func):
     @wraps(func)
     def wrapped(update: Update, context: CallbackContext, *args, **kwargs):
@@ -118,12 +110,7 @@ def restricted(func):
             return func(update, context, *args, **kwargs)
 
         user_id = update.effective_user.id
-
-        # on enregistre l'utilisateur pour le broadcast et le leaderboard
-        from bot.database.models.user import User
-        User.track(user_id, update.effective_user.username, update.effective_user.first_name)
-
-        if (config.telegram.admins_only or config.telegram.get('maintenance_mode', False)) and not is_admin(user_id):
+        if (config.telegram.admins_only or config.telegram.get('maintenance_mode', False)) and user_id not in config.telegram.admins:
             logger.info('unauthorized access denied for %d', user_id)
 
             if config.telegram.admins_only:
@@ -141,7 +128,7 @@ def adminsonly(func):
     @wraps(func)
     def wrapped(update: Update, context: CallbackContext, *args, **kwargs):
         user_id = update.effective_user.id
-        if not is_admin(user_id):
+        if user_id not in config.telegram.admins:
             logger.warning('user %d tried to use a restriced command', user_id)
             update.message.reply_text('You are not allowed to use this command')
             return
@@ -168,3 +155,4 @@ def dbsession(func):
         return callback_result
 
     return wrapped
+    
