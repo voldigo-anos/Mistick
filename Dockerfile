@@ -1,9 +1,8 @@
 FROM python:3.11-slim
 WORKDIR /usr/src/sticker-thief
 
-# Outils de compilation nécessaires pour construire tgcrypto (dépendance de pyrogram)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc build-essential && \
+    apt-get install -y --no-install-recommends gcc build-essential ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
