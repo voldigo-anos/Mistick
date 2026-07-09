@@ -7,6 +7,7 @@ stickers.tocustomemoji
 stickers.tofile
 packs.readd
 packs.export
+packs.import_pack
 
 packs.create # CallbackQuery handler for the pack type keyboard
 packs.cleanup
