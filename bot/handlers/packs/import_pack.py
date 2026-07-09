@@ -1,8 +1,12 @@
+import json
 import logging
 import math
 import os
 import tempfile
+import urllib.parse
+import urllib.request
 from html import escape as html_escape
+from types import SimpleNamespace
 
 # noinspection PyPackageRequirements
 from telegram import ChatAction, ParseMode, Update
@@ -26,6 +30,49 @@ from ...utils import converter
 from ...utils import wastickers
 
 logger = logging.getLogger(__name__)
+
+
+def _get_sticker_set_raw(context: CallbackContext, name: str) -> SimpleNamespace:
+    """recupere un sticker set en appelant directement l'API Telegram (urllib),
+    en contournant telegram.StickerSet.de_json().
+
+    Necessaire car python-telegram-bot 13.x exige encore les champs is_animated
+    et is_video sur l'objet StickerSet, alors que Telegram les a retires de la
+    reponse de getStickerSet depuis Bot API 7.2 (juin 2024). Sans ce contournement,
+    bot.get_sticker_set() plante avec:
+    "StickerSet.__init__() missing 2 required positional arguments:
+    'is_animated' and 'is_video'"
+    Voir: https://github.com/python-telegram-bot/python-telegram-bot/issues/4181
+    """
+
+    url = 'https://api.telegram.org/bot{}/getStickerSet?{}'.format(
+        context.bot.token, urllib.parse.urlencode({'name': name})
+    )
+
+    with urllib.request.urlopen(url, timeout=20) as response:
+        payload = json.loads(response.read().decode('utf-8'))
+
+    if not payload.get('ok'):
+        raise RuntimeError(payload.get('description', 'getStickerSet failed'))
+
+    result = payload['result']
+
+    stickers = [
+        SimpleNamespace(
+            file_id=s['file_id'],
+            file_unique_id=s.get('file_unique_id'),
+            is_animated=bool(s.get('is_animated', False)),
+            is_video=bool(s.get('is_video', False)),
+            emoji=s.get('emoji'),
+        )
+        for s in result.get('stickers', [])
+    ]
+
+    return SimpleNamespace(
+        name=result['name'],
+        title=result['title'],
+        stickers=stickers,
+    )
 
 
 def _download_raw_sticker(context: CallbackContext, sticker) -> str:
@@ -90,7 +137,7 @@ def on_sticker_receive(update: Update, context: CallbackContext):
         update.message.reply_text(Strings.IMPORT_PACK_NO_PACK)
         return Status.IMPORT_WAITING_STICKER
 
-    sticker_set = context.bot.get_sticker_set(update.message.sticker.set_name)
+    sticker_set = _get_sticker_set_raw(context, update.message.sticker.set_name)
 
     update.message.reply_text(Strings.IMPORT_PACK_PROCESSING)
 
@@ -122,10 +169,7 @@ def on_sticker_receive(update: Update, context: CallbackContext):
                 os.remove(input_path)
 
     if not converted_stickers:
-        update.message.reply_text(
-            "❌ I couldn't convert any sticker from this pack. The pack might only contain formats "
-            "that aren't supported on this server."
-        )
+        update.message.reply_text(Strings.IMPORT_PACK_NO_STICKERS_CONVERTED)
         return ConversationHandler.END
 
     tray_icon_png = wastickers.build_tray_icon_png(converted_stickers[0])
