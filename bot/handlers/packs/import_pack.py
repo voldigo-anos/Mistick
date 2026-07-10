@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import logging
 import math
@@ -30,6 +31,12 @@ from ...utils import converter
 from ...utils import wastickers
 
 logger = logging.getLogger(__name__)
+
+# nombre de stickers telecharges+convertis EN PARALLELE. ffmpeg/le telechargement
+# liberent le GIL pendant l'essentiel de leur travail, donc des threads suffisent
+# (pas besoin de multiprocessing). Augmente si le serveur a plus de CPU/bande passante,
+# reduis si tu vois des timeouts ou une surcharge memoire/CPU sur de gros packs animes.
+MAX_PARALLEL_CONVERSIONS = 8
 
 
 def _get_sticker_set_raw(context: CallbackContext, name: str) -> SimpleNamespace:
@@ -115,6 +122,20 @@ def _convert_single_sticker(sticker, input_path: str) -> bytes:
         out.close()
 
 
+def _download_and_convert_one(context: CallbackContext, sticker) -> bytes:
+    """telecharge PUIS convertit un seul sticker. Concue pour etre lancee dans un
+    thread pool: chaque sticker est independant des autres (fichier temporaire propre,
+    aucun etat partage), donc plusieurs peuvent tourner en parallele sans se marcher dessus"""
+
+    input_path = None
+    try:
+        input_path = _download_raw_sticker(context, sticker)
+        return _convert_single_sticker(sticker, input_path)
+    finally:
+        if input_path and os.path.exists(input_path):
+            os.remove(input_path)
+
+
 @decorators.action(ChatAction.TYPING)
 @decorators.restricted
 @decorators.failwithmessage
@@ -143,7 +164,10 @@ def on_sticker_receive(update: Update, context: CallbackContext):
 
     total = len(sticker_set.stickers)
     files_count = wastickers.files_count_for(total)
-    estimated_minutes = max(1, math.ceil(total / 60))
+    # estimation basee sur un debit approximatif de MAX_PARALLEL_CONVERSIONS/2 stickers
+    # convertis par seconde (grace au parallelisme), au lieu d'un traitement un par un
+    estimated_stickers_per_minute = 30 * MAX_PARALLEL_CONVERSIONS
+    estimated_minutes = max(1, math.ceil(total / estimated_stickers_per_minute))
 
     update.message.reply_text(Strings.IMPORT_PACK_STARTING.format(estimated_minutes))
 
@@ -151,22 +175,27 @@ def on_sticker_receive(update: Update, context: CallbackContext):
         Strings.IMPORT_PACK_DETAILS.format(html_escape(sticker_set.title), total, files_count)
     )
 
-    converted_stickers = []  # liste de bytes webp, dans l'ordre du pack
+    converted_by_index = {}
     skipped_stickers = 0
 
-    for sticker in sticker_set.stickers:
-        input_path = None
-        try:
-            input_path = _download_raw_sticker(context, sticker)
-            webp_bytes = _convert_single_sticker(sticker, input_path)
-            converted_stickers.append(webp_bytes)
-        except Exception:
-            logger.warning('skipping a sticker of %s: conversion failed', sticker_set.name, exc_info=True)
-            skipped_stickers += 1
-            continue
-        finally:
-            if input_path and os.path.exists(input_path):
-                os.remove(input_path)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL_CONVERSIONS) as executor:
+        future_to_index = {
+            executor.submit(_download_and_convert_one, context, sticker): index
+            for index, sticker in enumerate(sticker_set.stickers)
+        }
+
+        for future in concurrent.futures.as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                converted_by_index[index] = future.result()
+            except Exception:
+                logger.warning('skipping sticker #%d of %s: conversion failed', index, sticker_set.name,
+                                exc_info=True)
+                skipped_stickers += 1
+
+    # les threads terminent dans un ordre imprevisible: on retrie par index d'origine
+    # pour garder le meme ordre que dans le pack Telegram
+    converted_stickers = [converted_by_index[i] for i in sorted(converted_by_index)]
 
     if not converted_stickers:
         update.message.reply_text(Strings.IMPORT_PACK_NO_STICKERS_CONVERTED)
