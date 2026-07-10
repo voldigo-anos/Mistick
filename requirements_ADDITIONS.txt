@@ -4,3 +4,6 @@
 # Optionnel: pour convertir aussi les stickers animes .tgs (Lottie) vers WhatsApp,
 # installe en plus (sinon ces stickers seront simplement ignores/"skipped"):
 lottie[GIF]
+
+# Pour la fonction /language (lecture des fichiers locales/*.yaml):
+pyyaml
