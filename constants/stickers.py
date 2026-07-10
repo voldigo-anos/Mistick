@@ -38,4 +38,3 @@ class WaStickers:
     STICKER_SIZE = 512
     TITLE_MAX_LEN = 128
     AUTHOR_MAX_LEN = 128
-    
