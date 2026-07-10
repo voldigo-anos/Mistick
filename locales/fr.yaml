@@ -1,0 +1,9 @@
+language_name: "🇫🇷 Français"
+
+cmd:
+  lang:
+    choose: "Choisis ta langue :"
+    chosen: "Langue définie sur {language} ✅"
+
+language:
+  auto_detected: "J'ai réglé ta langue sur {language} d'après les paramètres de ton Telegram. Tu peux la changer à tout moment avec /language."

@@ -1,0 +1,9 @@
+language_name: "🇬🇧 English"
+
+cmd:
+  lang:
+    choose: "Choose your language:"
+    chosen: "Language set to {language} ✅"
+
+language:
+  auto_detected: "I've set your language to {language} based on your Telegram settings. You can change it anytime with /language."
